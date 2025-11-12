@@ -170,9 +170,6 @@ def parse_mission_request(json_data: dict) -> MissionRequestPending:
     return mission_request
 
 
-# Chemin vers le dossier parallèle "data_json"
-current_dir = os.path.dirname(__file__)
-json_folder = os.path.join(current_dir, "attachments")
 
 def to_serializable(obj):
     if hasattr(obj, "__dict__"):
@@ -181,23 +178,3 @@ def to_serializable(obj):
         return obj.isoformat()  # convertit les dates en string ISO
     return str(obj)  # fallback
 
-
-# Vérifier que le dossier existe
-if not os.path.exists(json_folder):
-    print(f"Le dossier {json_folder} n'existe pas.")
-    exit(1)
-
-
-for filename in os.listdir(json_folder):
-    if filename.endswith(".json"):
-        file_path = os.path.join(json_folder, filename)
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.loads(f.read())  # charge en dict
-                mission = parse_mission_request(data)
-                print(json.dumps(mission, default=to_serializable, indent=2, ensure_ascii=False))
-
-
-            break  
-        except Exception as e:
-            print(f"⚠️ Erreur en lisant {filename} :", e)
