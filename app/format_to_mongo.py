@@ -13,17 +13,16 @@ from helpers import (
     safe_dict,
     DEFAULT_MAPPER,
     _get_section,
-    _get_top_field,
-    to_serializable,
+    _get_top_field
 )
 
 
 
-class FormatLDG:
-    """Formatteur générique des missions LDG.
+class FormatToMongo:
+    """Formatteur générique des missions.
 
     Usage :
-      formatter = FormatLDG(mapper=custom_mapper)
+      formatter = FormatToMongo(mapper=custom_mapper)
       mission = formatter.format(json_data)
 
     Le `mapper` permet d'indiquer comment retrouver les sections principales dans le JSON
@@ -115,7 +114,7 @@ class FormatLDG:
 
 # wrapper rétrocompatible : garde la même signature pour le reste du code
 def parse_mission_request(json_data: dict, mapper: Optional[dict] = None) -> MissionRequestPending:
-    formatter = FormatLDG(mapper)
+    formatter = FormatToMongo(mapper)
     return formatter.format(json_data)
 
 
