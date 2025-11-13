@@ -1,10 +1,11 @@
 from app.job_mail_exporter import JobMailExporter  
 from app.format_to_mongo import parse_mission_request, to_serializable
+from app.connect_to_mongo import MongoJsonInserter
 import os
 import json
 
 def main():
-    # Création de l'objet avec la configuration
+    inserter = MongoJsonInserter(uri = "mongodb+srv://GuillaumeChinzi:Password37@cluster0.drffcqm.mongodb.net/")
     exporter = JobMailExporter(
         client_id="297b61f0-61d8-43d1-bfa4-dd00eb6557a2",
         authority="https://login.microsoftonline.com/47f7bd00-80c3-41fe-afc2-654138069f08",
@@ -18,7 +19,7 @@ def main():
     exporter.process_emails()
 
     current_dir = os.path.dirname(__file__)
-    parent_dir = os.path.dirname(current_dir)  # remonter d’un niveau
+    parent_dir = os.path.dirname(current_dir)  
     json_folder = os.path.join(parent_dir, "app", "attachments")
 
 
@@ -35,11 +36,12 @@ def main():
                     data = json.loads(f.read())  
                     mission = parse_mission_request(data)
                     print(json.dumps(mission, default=to_serializable, indent=2, ensure_ascii=False))
-
+                    inserter.insert_json(json.loads(json.dumps(mission, default=to_serializable)))
 
                 break  
             except Exception as e:
                 print(f"⚠️ Erreur en lisant {filename} :", e)
+    inserter.client.close()
 
 
 if __name__ == "__main__":

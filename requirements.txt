@@ -1,0 +1,7 @@
+
+# Minimal requirements for this folder/project
+requests
+msal
+pymongo
+--- IGNORE ---
+

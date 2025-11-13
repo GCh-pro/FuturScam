@@ -8,7 +8,7 @@ url = "https://api.littlebigconnection.com/oauth/token"
 payload = json.dumps({
     "grant_type": "client_credentials",
     "client_id": "286050",        
-    "client_secret": "Dauphinslol37!",
+    "client_secret": "*****",
     "audience": "external-client-api-v2"
 })
 
