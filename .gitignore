@@ -1,5 +1,24 @@
-attachments/** 
-.gitignore
-.git/
-.vscode/
+# Fichiers et dossiers Python temporaires
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Dossiers d'attachments (où qu’ils soient)
+attachments/
+**/attachments/
+
+# Environnements virtuels
+env/
+env_venv/
+.venv/
+
+# Fichiers système et IDE
 .DS_Store
+.vscode/
+.idea/
+.git/
+
+# Fichiers compilés, caches, logs
+*.pyo
+*.pyd
+*.log

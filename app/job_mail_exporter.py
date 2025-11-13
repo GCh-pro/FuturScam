@@ -9,7 +9,8 @@ class JobMailExporter:
         self.client_id = client_id
         self.authority = authority
         self.scopes = scopes
-        self.attachments_dir = os.path.abspath(attachments_dir)
+        base_dir = os.path.dirname(os.path.abspath(__file__)) 
+        self.attachments_dir = os.path.join(base_dir, attachments_dir)
         os.makedirs(self.attachments_dir, exist_ok=True)
         self.access_token = None
         self.headers = {}
@@ -25,7 +26,7 @@ class JobMailExporter:
         self.headers = {"Authorization": f"Bearer {self.access_token}"}
         print("✅ Authentification réussie.")
 
-    def get_filtered_emails(self, subject_prefix="[JOB EXPORT]", max_emails=50):
+    def get_filtered_emails(self, subject_prefix="[JOB EXPORT]", max_emails=250):
         url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments,receivedDateTime"
         emails = requests.get(url, headers=self.headers).json().get("value", [])
         
