@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from app.models import (
+from models import (
     Company,
     DailyRate,
     Conditions,
@@ -8,7 +8,7 @@ from app.models import (
     Skill,
     MissionRequestPending,
 )
-from app.helpers import (
+from helpers import (
     parse_datetime,
     safe_dict,
     DEFAULT_MAPPER,
