@@ -3,6 +3,7 @@ from app.format_to_mongo import parse_mission_request, to_serializable
 from app.connect_to_mongo import MongoJsonInserter
 import os
 import json
+import shutil
 
 def main():
     inserter = MongoJsonInserter(uri = "mongodb+srv://GuillaumeChinzi:Password37@cluster0.drffcqm.mongodb.net/")
@@ -10,7 +11,8 @@ def main():
         client_id="297b61f0-61d8-43d1-bfa4-dd00eb6557a2",
         authority="https://login.microsoftonline.com/47f7bd00-80c3-41fe-afc2-654138069f08",
         scopes=["Mail.Read"],
-        attachments_dir="attachments"  
+        attachments_dir="attachments" ,
+        init = False
     )
 
 
@@ -37,10 +39,16 @@ def main():
                     mission = parse_mission_request(data)
                     print(json.dumps(mission, default=to_serializable, indent=2, ensure_ascii=False))
                     inserter.insert_json(json.loads(json.dumps(mission, default=to_serializable)))
-
-                break  
             except Exception as e:
                 print(f"⚠️ Erreur en lisant {filename} :", e)
+            finally:
+                # 🧹 Supprimer seulement le fichier JSON traité
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        print(f"🗑️  Fichier '{filename}' supprimé")
+                    except Exception as e:
+                        print(f"⚠️ Erreur lors de la suppression de '{filename}' : {e}")
     inserter.client.close()
 
 

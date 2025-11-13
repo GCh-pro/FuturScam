@@ -5,7 +5,7 @@ import base64
 from datetime import datetime, timezone
 
 class JobMailExporter:
-    def __init__(self, client_id: str, authority: str, scopes: list, attachments_dir: str = "attachments"):
+    def __init__(self, client_id: str, authority: str, scopes: list, attachments_dir: str = "attachments", init: bool = False):
         self.client_id = client_id
         self.authority = authority
         self.scopes = scopes
@@ -14,6 +14,7 @@ class JobMailExporter:
         os.makedirs(self.attachments_dir, exist_ok=True)
         self.access_token = None
         self.headers = {}
+        self.init = init
 
     def authenticate(self):
         app = PublicClientApplication(self.client_id, authority=self.authority)
@@ -27,14 +28,17 @@ class JobMailExporter:
         print("✅ Authentification réussie.")
 
     def get_filtered_emails(self, subject_prefix="[JOB EXPORT]", max_emails=250):
-        url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments,receivedDateTime"
+        if not self.init:
+            url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments,receivedDateTime"
+        else:
+            url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments"
         emails = requests.get(url, headers=self.headers).json().get("value", [])
         
         today = datetime.now(timezone.utc).date()
         filtered = [
             mail for mail in emails
-            if mail.get("subject", "").startswith(subject_prefix) and
-               datetime.fromisoformat(mail.get("receivedDateTime")).date() == today
+            if mail.get("subject", "").startswith(subject_prefix)
+            and (self.init or datetime.fromisoformat(mail.get("receivedDateTime")).date() == today)
         ]
         print(f"📬 Nombre de mails filtrés : {len(filtered)}")
         return filtered

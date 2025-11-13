@@ -22,3 +22,5 @@ env_venv/
 *.pyo
 *.pyd
 *.log
+
+params.py
