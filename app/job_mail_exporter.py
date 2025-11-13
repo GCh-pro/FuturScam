@@ -71,13 +71,4 @@ class JobMailExporter:
         print("\n🎉 Tous les mails filtrés et pièces jointes traités.")
 
 
-# ------------------- Exemple d'utilisation depuis un main -------------------
-if __name__ == "__main__":
-    exporter = JobMailExporter(
-        client_id="297b61f0-61d8-43d1-bfa4-dd00eb6557a2",
-        authority="https://login.microsoftonline.com/47f7bd00-80c3-41fe-afc2-654138069f08",
-        scopes=["Mail.Read"]
-    )
 
-    exporter.authenticate()
-    exporter.process_emails()
