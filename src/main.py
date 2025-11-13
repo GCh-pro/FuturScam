@@ -1,6 +1,7 @@
 from app.job_mail_exporter import JobMailExporter  
 from app.format_to_mongo import parse_mission_request, to_serializable
 from app.connect_to_mongo import MongoJsonInserter
+from app.job_completer import JobDescriptionEnhancer
 import os
 import json
 import params
@@ -15,7 +16,7 @@ def main():
         init = False
     )
 
-    completer = JobDescriptionEnhancer(api_key=params.OPENAI_KEY)
+    #completer = JobDescriptionEnhancer(api_key=params.OPENAI_KEY)
     exporter.authenticate()
 
     exporter.process_emails()
@@ -37,7 +38,7 @@ def main():
                 with open(file_path, "r", encoding="utf-8") as f:
                     data = json.loads(f.read())  
                     mission = parse_mission_request(data)
-                    completed_mission = completer.complete_and_translate(mission)
+                    #completed_mission = completer.complete_and_translate(mission)
                     inserter.insert_json(json.loads(json.dumps(completed_mission, default=to_serializable)))
             except Exception as e:
                 print(f"⚠️ Erreur en lisant {filename} :", e)
