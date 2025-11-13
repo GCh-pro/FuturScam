@@ -3,13 +3,13 @@ from app.format_to_mongo import parse_mission_request, to_serializable
 from app.connect_to_mongo import MongoJsonInserter
 import os
 import json
-import shutil
+import params
 
 def main():
-    inserter = MongoJsonInserter(uri = "mongodb+srv://GuillaumeChinzi:Password37@cluster0.drffcqm.mongodb.net/")
+    inserter = MongoJsonInserter(uri = params.MONGO_URI)
     exporter = JobMailExporter(
-        client_id="297b61f0-61d8-43d1-bfa4-dd00eb6557a2",
-        authority="https://login.microsoftonline.com/47f7bd00-80c3-41fe-afc2-654138069f08",
+        client_id= params.AZURE_CLIENT,
+        authority=params.AZURE_URI,
         scopes=["Mail.Read"],
         attachments_dir="attachments" ,
         init = False
@@ -37,7 +37,6 @@ def main():
                 with open(file_path, "r", encoding="utf-8") as f:
                     data = json.loads(f.read())  
                     mission = parse_mission_request(data)
-                    print(json.dumps(mission, default=to_serializable, indent=2, ensure_ascii=False))
                     inserter.insert_json(json.loads(json.dumps(mission, default=to_serializable)))
             except Exception as e:
                 print(f"⚠️ Erreur en lisant {filename} :", e)
