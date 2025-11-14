@@ -69,3 +69,20 @@ def to_serializable(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()  # convertit les dates en string ISO
     return str(obj)  # fallback
+
+class Serializable:
+    def to_dict(self):
+        result = {}
+        for key, value in self.__dict__.items():
+            if isinstance(value, datetime):
+                result[key] = value.isoformat()
+            elif hasattr(value, "to_dict"):
+                result[key] = value.to_dict()
+            elif isinstance(value, list):
+                result[key] = [
+                    v.to_dict() if hasattr(v, "to_dict") else v
+                    for v in value
+                ]
+            else:
+                result[key] = value
+        return result

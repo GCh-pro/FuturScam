@@ -2,7 +2,7 @@ import os
 import requests
 from msal import PublicClientApplication
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 class JobMailExporter:
     def __init__(self, client_id: str, authority: str, scopes: list, attachments_dir: str = "attachments", init: bool = False):
@@ -34,7 +34,7 @@ class JobMailExporter:
             url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments"
         emails = requests.get(url, headers=self.headers).json().get("value", [])
         
-        today = datetime.now(timezone.utc).date()
+        today = (datetime.now(timezone.utc) - timedelta(days=1)).date()
         filtered = [
             mail for mail in emails
             if mail.get("subject", "").startswith(subject_prefix)
