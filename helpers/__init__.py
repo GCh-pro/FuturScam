@@ -1,8 +1,52 @@
 import json
 from datetime import datetime
 from typing import Any, Dict, Optional
+import re 
 
+def get_by_path(data: dict, path: str) -> Any:
+    """Get a nested value using dot notation and [index]. Returns KeyError/IndexError if absent."""
+    parts = re.split(r'\.(?![^\[]*\])', path)
+    cur = data
+    for p in parts:
+        m = re.match(r'(\w+)\[(\d+)\]', p)
+        if m:
+            key, idx = m.group(1), int(m.group(2))
+            cur = cur[key][idx]
+        else:
+            cur = cur[p]
+    return cur
 
+def ensure_path_exists(data: dict, path: str):
+    """Ensure intermediate dicts exist for a dot path (for set_by_path)."""
+    parts = path.split(".")
+    cur = data
+    for p in parts[:-1]:
+        if p not in cur or not isinstance(cur[p], dict):
+            cur[p] = {}
+        cur = cur[p]
+    return cur
+
+def set_by_path(data: dict, path: str, value: Any):
+    """Set a nested value using dot notation. Creates intermediate dicts as needed."""
+    cur = ensure_path_exists(data, path)
+    last = path.split(".")[-1]
+    cur[last] = value
+
+def append_to_list_by_path(data: dict, path: str, value: Any):
+    """
+    Append a value to a list at `path`. Creates list and intermediate dicts as needed.
+    path is dot notation to the list (e.g. 'skills' or 'company.skills').
+    """
+    parts = path.split(".")
+    cur = data
+    for p in parts[:-1]:
+        if p not in cur or not isinstance(cur[p], dict):
+            cur[p] = {}
+        cur = cur[p]
+    last = parts[-1]
+    if last not in cur or not isinstance(cur[last], list):
+        cur[last] = []
+    cur[last].append(value)
 def parse_datetime(dt_str: Optional[str]) -> Optional[datetime]:
     if dt_str is None:
         return None
@@ -22,45 +66,6 @@ def safe_dict(obj: Any) -> Dict:
     elif isinstance(obj, dict):
         return obj
     return {}
-
-
-# Mapper par défaut : définit les noms des sections/top-level utilisés dans le JSON d'entrée.
-DEFAULT_MAPPER = {
-    # pour la location : (top_level_section, sub_section)
-    "location_section": ("locationInfo", "mainLocation"),
-    "company_section": "companyInfo",
-    "budget_section": "budgetInfo",
-    "publication_section": "publicationInfo",
-    "role_section": "roleInfo",
-    "language_section": "languageInfo",
-    "skill_section": "skillInfo",
-    # noms top-level pour champs directs
-    "contractingPartyName": "contractingPartyName",
-    "description": "description",
-    "id": "id",
-    "jobUrl": "jobUrl",
-    "managedServiceProviderName": "managedServiceProviderName",
-}
-
-
-def _get_section(data: dict, mapper: dict, section_key: str) -> dict:
-    """Récupère la section en tenant compte du mapper.
-
-    Si le mapper pour la section est un tuple/list (top, sub) -> renvoie data[top][sub]
-    Sinon, renvoie data[mapped_name]
-    """
-    mapped = mapper.get(section_key)
-    if isinstance(mapped, (list, tuple)) and len(mapped) >= 2:
-        top, sub = mapped[0], mapped[1]
-        return safe_dict(data.get(top, {})).get(sub, {})
-    if isinstance(mapped, str):
-        return safe_dict(data.get(mapped, {}))
-    return {}
-
-
-def _get_top_field(data: dict, mapper: dict, field_name: str, default=None):
-    mapped = mapper.get(field_name, field_name)
-    return data.get(mapped, default)
 
 
 def to_serializable(obj):

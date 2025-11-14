@@ -43,9 +43,9 @@ MAPPING = {
 
 LIST_MAPPINGS = {
     # skills: transform chaque élément {'name':..., 'seniority':...} -> same structure in dest 'skills'
-    "skillInfo.skills": ("skills", {"name": "name", "seniority": "seniority"}, mappers.identity_transform),
+    "skillInfo.skills": ("skills", {"name": "name", "seniority": "seniority"}, lambda src, dst: dst),
 
 
-    "languageInfo.languageGroups": ("languages", {"language": "language", "level": "level"}, mappers.identity_transform)
+    "languageInfo.languageGroups": ("languages", {"language": "language", "level": "level"}, lambda src, dst: dst),
 
 }

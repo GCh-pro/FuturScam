@@ -2,7 +2,7 @@ import os
 import requests
 from msal import PublicClientApplication
 import base64
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 class JobMailExporter:
     def __init__(self, client_id: str, authority: str, scopes: list, attachments_dir: str = "attachments", init: bool = False):
@@ -34,7 +34,7 @@ class JobMailExporter:
             url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments"
         emails = requests.get(url, headers=self.headers).json().get("value", [])
         
-        today = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        today = datetime.now(timezone.utc).date()
         filtered = [
             mail for mail in emails
             if mail.get("subject", "").startswith(subject_prefix)
@@ -60,13 +60,22 @@ class JobMailExporter:
             att_name = att.get("name", "unknown_file")
             att_content_bytes = att.get("contentBytes")
 
-            if att_content_bytes:
-                file_path = os.path.join(self.attachments_dir, att_name)
-                with open(file_path, "wb") as f:
-                    f.write(base64.b64decode(att_content_bytes))
-                print(f"✅ Pièce jointe enregistrée : {file_path}")
-            else:
+            # Vérifie que c’est un JSON
+            if not att_name.lower().endswith(".json"):
+                print(f"⏭️ Fichier ignoré (pas un JSON) : {att_name}")
+                continue
+            
+            # Vérifie qu’on a bien le contenu
+            if not att_content_bytes:
                 print(f"⚠️ Impossible de récupérer la pièce jointe : {att_name}")
+                continue
+            
+            # Enregistrement du fichier JSON
+            file_path = os.path.join(self.attachments_dir, att_name)
+            with open(file_path, "wb") as f:
+                f.write(base64.b64decode(att_content_bytes))
+
+            print(f"✅ Pièce jointe JSON enregistrée : {file_path}")
 
     def process_emails(self):
         filtered_emails = self.get_filtered_emails()
