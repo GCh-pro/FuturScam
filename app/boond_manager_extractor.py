@@ -44,15 +44,27 @@ def fetch_boond_opportunities():
     return response.json()
 
 
-def parse_criteria_with_skillboy(criteria_text: str) -> list:
-    """Parse criteria text using SkillBoy API to extract skills."""
-    skillboy_url = "http://localhost:8000/skillboy"
+def check_skillboy_health(skillboy_url: str = "http://localhost:8000") -> bool:
+    """Check if SkillBoy API is healthy."""
+    try:
+        response = requests.get(
+            f"{skillboy_url}/skillboy/health",
+            timeout=10
+        )
+        return response.status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def parse_criteria_with_skillboy(criteria_text: str, skillboy_url: str = "http://localhost:8000") -> list:
+    """Parse criteria text using SkillBoy API to extract skills.
+    Returns empty list if SkillBoy is unavailable."""
     
     try:
         response = requests.post(
-            skillboy_url,
+            f"{skillboy_url}/skillboy",
             json={"text": criteria_text},
-            timeout=10
+            timeout=120
         )
         
         if response.status_code == 200:
@@ -60,10 +72,10 @@ def parse_criteria_with_skillboy(criteria_text: str) -> list:
             skills = result.get("skills", [])
             return skills
         else:
-            print(f"SkillBoy API error: status {response.status_code}")
+            print(f"[WARN] SkillBoy API error: status {response.status_code}")
             return []
     except requests.RequestException as e:
-        print(f"Error connecting to SkillBoy API: {e}")
+        print(f"[WARN] SkillBoy unavailable: {e}")
         return []
 
 
@@ -78,6 +90,11 @@ def filter_recent_opportunities(data: dict, cutoff_date: datetime) -> list:
         update_dt = datetime.fromisoformat(update_date_str.replace("Z", "+00:00"))
         if update_dt > cutoff_date:
             filtered_ids.append(item["id"])
+    
+    # Check SkillBoy health once before processing
+    skillboy_available = check_skillboy_health()
+    if not skillboy_available:
+        print("[WARN] SkillBoy API unavailable, will skip skills parsing")
     
     # Fetch details for each filtered opportunity
     details = []
@@ -95,17 +112,23 @@ def filter_recent_opportunities(data: dict, cutoff_date: datetime) -> list:
                     algorithm="HS256"
                 ),
                 "Accept": "application/json"
-            }
+            },
+            timeout=30
         )
         
         if response.status_code == 200:
             try:
                 opportunity = response.json()
-                # Parse criteria using SkillBoy API
-                criteria_text = opportunity.get("data", {}).get("attributes", {}).get("criteria", "")
-                if criteria_text:
-                    skills = parse_criteria_with_skillboy(criteria_text)
-                    opportunity["data"]["attributes"]["criteria"] = skills
+                # Parse criteria using SkillBoy API only if available
+                if skillboy_available:
+                    # Concatenate criteria and description for better skill extraction
+                    criteria_text = opportunity.get("data", {}).get("attributes", {}).get("criteria", "")
+                    description_text = opportunity.get("data", {}).get("attributes", {}).get("description", "")
+                    combined_text = f"{criteria_text}\n{description_text}".strip()
+                    
+                    if combined_text:
+                        skills = parse_criteria_with_skillboy(combined_text)
+                        opportunity["data"]["attributes"]["criteria"] = skills
                 details.append(opportunity)
             except json.JSONDecodeError as e:
                 print(f"Error decoding JSON for opportunity {item_id}: {e}")
@@ -116,27 +139,62 @@ def filter_recent_opportunities(data: dict, cutoff_date: datetime) -> list:
 
 
 def transform_boond_to_mongo_format(opportunity: dict) -> dict:
-    """Transform Boond opportunity to MongoDB MissionRequestPending format."""
-    # Use the mapper engine to transform the data
+    """Transform Boond opportunity to MongoDB RFP format using mapper engine."""
+    from mappers.boond_mappings import (
+        BOOND_TO_MONGO_MAPPING,
+        BOOND_LIST_MAPPINGS,
+        apply_boond_defaults
+    )
+    from mappers.mapper_to_mongo import map_json
+    
+    # Use the generic mapper engine
     transformed = map_json(opportunity, BOOND_TO_MONGO_MAPPING, BOOND_LIST_MAPPINGS)
+    
+    # Apply all defaults and fix invalid data
+    transformed = apply_boond_defaults(transformed, opportunity)
+    
     return transformed
+
+
+def save_to_mongodb_api(rfp_document: dict, api_url: str = "http://localhost:8000") -> bool:
+    """Save RFP document to MongoDB via API POST /mongodb endpoint."""
+    try:
+        response = requests.post(
+            f"{api_url}/mongodb",
+            json=rfp_document,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"RFP created successfully: {result.get('id', 'Unknown ID')}")
+            return True
+        else:
+            print(f"MongoDB API error: status {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
+    except requests.RequestException as e:
+        print(f"Error connecting to MongoDB API: {e}")
+        return False
 
 
 if __name__ == "__main__":
     data = fetch_boond_opportunities()
     if data:
-        cutoff = datetime(2025, 11, 17, tzinfo=timezone.utc)
+        cutoff = datetime(2025, 11, 21, tzinfo=timezone.utc)
         recent_opportunities = filter_recent_opportunities(data, cutoff)
         
-        # Transform each opportunity to MongoDB format
-        mongo_documents = []
+        print(f"Found {len(recent_opportunities)} recent opportunities")
+        
+        # Transform and save each opportunity to MongoDB via API
+        saved_count = 0
         for opportunity in recent_opportunities:
             try:
-                mongo_doc = transform_boond_to_mongo_format(opportunity)
-                mongo_documents.append(mongo_doc)
+                rfp_doc = transform_boond_to_mongo_format(opportunity)
+                if save_to_mongodb_api(rfp_doc):
+                    saved_count += 1
             except Exception as e:
-                print(f"Error transforming opportunity: {e}")
+                print(f"Error processing opportunity: {e}")
         
-        # Output as JSON
-        print(json.dumps(mongo_documents, indent=4, ensure_ascii=False))
+        print(f"\nSuccessfully saved {saved_count}/{len(recent_opportunities)} RFPs to MongoDB")
     

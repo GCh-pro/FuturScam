@@ -25,14 +25,21 @@ class JobMailExporter:
         
         self.access_token = result["access_token"]
         self.headers = {"Authorization": f"Bearer {self.access_token}"}
-        print("✅ Authentification réussie.")
+        print("[OK] Authentification réussie.")
 
     def get_filtered_emails(self, subject_prefix="[JOB EXPORT]", max_emails=250):
         if not self.init:
             url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments,receivedDateTime"
         else:
             url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments"
-        emails = requests.get(url, headers=self.headers).json().get("value", [])
+        
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status()
+            emails = response.json().get("value", [])
+        except Exception as e:
+            print(f"[ERROR] Error fetching emails: {e}")
+            return []
         
         today = datetime.now(timezone.utc).date()
         filtered = [
@@ -40,21 +47,32 @@ class JobMailExporter:
             if mail.get("subject", "").startswith(subject_prefix)
             and (self.init or datetime.fromisoformat(mail.get("receivedDateTime")).date() == today)
         ]
-        print(f"📬 Nombre de mails filtrés : {len(filtered)}")
+        print(f"[MAIL] Total emails found: {len(emails)}, Filtered by '{subject_prefix}': {len(filtered)}")
         return filtered
 
     def save_attachments(self, mail):
         mail_id = mail["id"]
         subject = mail.get("subject", "No_Subject")
         has_attachments = mail.get("hasAttachments", False)
-        print(f"\n📨 Sujet : {subject}")
-        print(f"📎 Pièces jointes : {'Oui' if has_attachments else 'Non'}")
+        print(f"\n[SUBJECT] Sujet : {subject}")
+        print(f"[ATTACHMENTS] Pièces jointes : {'Oui' if has_attachments else 'Non'}")
 
         if not has_attachments:
+            print(f"[SKIP] No attachments for this email")
             return
 
-        attachments_url = f"https://graph.microsoft.com/v1.0/me/messages/{mail_id}/attachments"
-        attachments = requests.get(attachments_url, headers=self.headers).json().get("value", [])
+        try:
+            attachments_url = f"https://graph.microsoft.com/v1.0/me/messages/{mail_id}/attachments"
+            response = requests.get(attachments_url, headers=self.headers)
+            response.raise_for_status()
+            attachments = response.json().get("value", [])
+        except Exception as e:
+            print(f"[ERROR] Error fetching attachments: {e}")
+            return
+
+        if not attachments:
+            print(f"[WARN] No attachments returned from API for {mail_id}")
+            return
 
         for att in attachments:
             att_name = att.get("name", "unknown_file")
@@ -62,26 +80,29 @@ class JobMailExporter:
 
             # Vérifie que c’est un JSON
             if not att_name.lower().endswith(".json"):
-                print(f"⏭️ Fichier ignoré (pas un JSON) : {att_name}")
+                print(f"[SKIP] Fichier ignoré (pas un JSON) : {att_name}")
                 continue
             
             # Vérifie qu’on a bien le contenu
             if not att_content_bytes:
-                print(f"⚠️ Impossible de récupérer la pièce jointe : {att_name}")
+                print(f"[WARN] Impossible de récupérer la pièce jointe : {att_name}")
                 continue
             
             # Enregistrement du fichier JSON
             file_path = os.path.join(self.attachments_dir, att_name)
-            with open(file_path, "wb") as f:
-                f.write(base64.b64decode(att_content_bytes))
-
-            print(f"✅ Pièce jointe JSON enregistrée : {file_path}")
+            try:
+                with open(file_path, "wb") as f:
+                    f.write(base64.b64decode(att_content_bytes))
+                print(f"[OK] Pièce jointe JSON enregistrée : {file_path}")
+            except Exception as e:
+                print(f"[ERROR] Error saving file {att_name}: {e}")
 
     def process_emails(self):
         filtered_emails = self.get_filtered_emails()
+        print(f"[EMAIL] Processing {len(filtered_emails)} emails...")
         for mail in filtered_emails:
             self.save_attachments(mail)
-        print("\n🎉 Tous les mails filtrés et pièces jointes traités.")
+        print("[OK] Tous les mails filtrés et pièces jointes traités.")
 
 
 
