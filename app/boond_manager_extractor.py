@@ -9,6 +9,9 @@ import requests
 # Add parent directory to sys.path to import params from root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import params
+from helpers import get_by_path, set_by_path, append_to_list_by_path
+from mappers.boond_mappings import BOOND_TO_MONGO_MAPPING, BOOND_LIST_MAPPINGS
+from mappers.mapper_to_mongo import map_json
 
 
 def fetch_boond_opportunities():
@@ -112,10 +115,28 @@ def filter_recent_opportunities(data: dict, cutoff_date: datetime) -> list:
     return details
 
 
+def transform_boond_to_mongo_format(opportunity: dict) -> dict:
+    """Transform Boond opportunity to MongoDB MissionRequestPending format."""
+    # Use the mapper engine to transform the data
+    transformed = map_json(opportunity, BOOND_TO_MONGO_MAPPING, BOOND_LIST_MAPPINGS)
+    return transformed
+
+
 if __name__ == "__main__":
     data = fetch_boond_opportunities()
     if data:
         cutoff = datetime(2025, 11, 17, tzinfo=timezone.utc)
-        recent_ids = filter_recent_opportunities(data, cutoff)
-        print(json.dumps(recent_ids, indent=4, ensure_ascii=False))
+        recent_opportunities = filter_recent_opportunities(data, cutoff)
+        
+        # Transform each opportunity to MongoDB format
+        mongo_documents = []
+        for opportunity in recent_opportunities:
+            try:
+                mongo_doc = transform_boond_to_mongo_format(opportunity)
+                mongo_documents.append(mongo_doc)
+            except Exception as e:
+                print(f"Error transforming opportunity: {e}")
+        
+        # Output as JSON
+        print(json.dumps(mongo_documents, indent=4, ensure_ascii=False))
     
