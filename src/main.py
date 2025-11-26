@@ -8,8 +8,7 @@ from app.job_mail_exporter import JobMailExporter
 from app.boond_manager_extractor import (
     fetch_boond_opportunities,
     filter_recent_opportunities,
-    transform_boond_to_mongo_format,
-    parse_criteria_with_skillboy
+    transform_boond_to_mongo_format
 )
 import mappers.pro_unity_mappings as pum
 import mappers.mapper_to_mongo as ftm
@@ -162,7 +161,7 @@ def cleanup_closed_boond_rfps(boond_data: dict, api_url: str = "http://localhost
 def process_boond_opportunities(cutoff_date: datetime = None, api_url: str = "http://localhost:8000"):
     """Fetch and process Boond Manager opportunities."""
     if cutoff_date is None:
-        cutoff_date = datetime(2025, 11, 17, tzinfo=timezone.utc)
+        cutoff_date = datetime(2025, 11, 20, tzinfo=timezone.utc)
     
     print("\n[DOWNLOAD] Fetching Boond Manager opportunities...")
     

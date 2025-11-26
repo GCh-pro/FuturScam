@@ -9,7 +9,6 @@ import requests
 # Add parent directory to sys.path to import params from root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import params
-from helpers import get_by_path, set_by_path, append_to_list_by_path
 from mappers.boond_mappings import BOOND_TO_MONGO_MAPPING, BOOND_LIST_MAPPINGS
 from mappers.mapper_to_mongo import map_json
 
@@ -119,6 +118,7 @@ def filter_recent_opportunities(data: dict, cutoff_date: datetime) -> list:
         if response.status_code == 200:
             try:
                 opportunity = response.json()
+                print(opportunity)
                 # Parse criteria using SkillBoy API only if available
                 if skillboy_available:
                     # Concatenate criteria and description for better skill extraction
@@ -150,32 +150,12 @@ def transform_boond_to_mongo_format(opportunity: dict) -> dict:
     # Use the generic mapper engine
     transformed = map_json(opportunity, BOOND_TO_MONGO_MAPPING, BOOND_LIST_MAPPINGS)
     
-    # Apply all defaults and fix invalid data
+    # Apply post-mapping transformations and defaults (pass original for company extraction)
     transformed = apply_boond_defaults(transformed, opportunity)
     
     return transformed
 
 
-def save_to_mongodb_api(rfp_document: dict, api_url: str = "http://localhost:8000") -> bool:
-    """Save RFP document to MongoDB via API POST /mongodb endpoint."""
-    try:
-        response = requests.post(
-            f"{api_url}/mongodb",
-            json=rfp_document,
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            print(f"RFP created successfully: {result.get('id', 'Unknown ID')}")
-            return True
-        else:
-            print(f"MongoDB API error: status {response.status_code}")
-            print(f"Response: {response.text}")
-            return False
-    except requests.RequestException as e:
-        print(f"Error connecting to MongoDB API: {e}")
-        return False
 
 
 if __name__ == "__main__":
@@ -186,15 +166,11 @@ if __name__ == "__main__":
         
         print(f"Found {len(recent_opportunities)} recent opportunities")
         
-        # Transform and save each opportunity to MongoDB via API
-        saved_count = 0
+        # Transform each opportunity to MongoDB format (actual saving happens in src/main.py)
         for opportunity in recent_opportunities:
             try:
                 rfp_doc = transform_boond_to_mongo_format(opportunity)
-                if save_to_mongodb_api(rfp_doc):
-                    saved_count += 1
+                print(f"Transformed: {rfp_doc.get('job_id')} - {rfp_doc.get('roleTitle')}")
             except Exception as e:
                 print(f"Error processing opportunity: {e}")
-        
-        print(f"\nSuccessfully saved {saved_count}/{len(recent_opportunities)} RFPs to MongoDB")
     
