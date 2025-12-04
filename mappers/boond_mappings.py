@@ -6,8 +6,34 @@ Uses mapper_to_mongo.py generic mapper engine with transformation functions.
 """
 
 ###############################################################################
+# Enumerations
+###############################################################################
+
+# Origin Type Enumeration - maps origin.typeOf integer to text value
+ORIGIN_TYPE_ENUM = {
+    0: "Prospection",
+    1: "Apporteur",
+    2: "Collègue",
+    3: "Réseau",
+    4: "Appel d'offre",
+    6: "Client",
+    7: "Salon",
+    8: "Google",
+    9: "Pro-Unity",
+    10: "ConnectingExpertise",
+    11: "Agrega.io",
+    12: "LittleBigConnection"
+}
+
+###############################################################################
 # Transformation functions for custom logic
 ###############################################################################
+
+def transform_origin_type(origin_type_id):
+    """Convert origin.typeOf integer ID to text value"""
+    if origin_type_id is None:
+        return "Unknown"
+    return ORIGIN_TYPE_ENUM.get(origin_type_id, f"Unknown ({origin_type_id})")
 
 ###############################################################################
 # Mapping dictionaries for mapper_to_mongo.py engine
@@ -43,7 +69,10 @@ BOOND_TO_MONGO_MAPPING = {
     "data.attributes.isActive": "isActive",
     
     # defaults for required fields
-    "data.attributes.serviceProvider": "serviceProvider",
+    "data.attributes.origin.typeOf": "serviceProvider",
+    
+    # seniority - default to NS (Not Specified)
+    "__constant__NS": "seniority",
 }
 
 BOOND_LIST_MAPPINGS = {
@@ -218,6 +247,16 @@ def apply_boond_defaults(transformed: dict, original: dict = None) -> dict:
             transformed["skills"] = [{"name": skill, "seniority": "Required"} for skill in skills_from_criteria]
         else:
             transformed["skills"] = skills_from_criteria
+    
+    # Transform serviceProvider from integer ID to text value
+    if "serviceProvider" in transformed:
+        transformed["serviceProvider"] = transform_origin_type(transformed["serviceProvider"])
+    else:
+        transformed["serviceProvider"] = "Unknown"
+    
+    # Ensure seniority field exists with default "NS" if not set
+    if "seniority" not in transformed or not transformed.get("seniority"):
+        transformed["seniority"] = "NS"
     
     # Remove any internal fields that shouldn't be in MongoDB
     transformed.pop("skills_from_criteria", None)

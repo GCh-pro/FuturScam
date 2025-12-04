@@ -219,7 +219,9 @@ def main():
     exporter = JobMailExporter(
         client_id=params.AZURE_CLIENT,
         authority=params.AZURE_URI,
-        scopes=["Mail.Read"],
+        scopes=["https://graph.microsoft.com/.default"],
+        client_secret=params.AZURE_SECRET,
+        user_email=params.AZURE_USER_EMAIL,
         attachments_dir="attachments",
         init=False
     )

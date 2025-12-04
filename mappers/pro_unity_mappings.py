@@ -29,6 +29,7 @@ MAPPING = {
     "roleInfo.roles[0].name": "roleTitle",
     "contractingPartyName": "serviceProvider",
     "publicationInfo.isClosed": "isActive",
+    "roleInfo.roles[0].seniority" : "seniority"
 }
 
 ###############################################################################

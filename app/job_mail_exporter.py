@@ -1,14 +1,17 @@
 import os
 import requests
-from msal import PublicClientApplication
+from msal import ConfidentialClientApplication
 import base64
 from datetime import datetime, timezone
 
 class JobMailExporter:
-    def __init__(self, client_id: str, authority: str, scopes: list, attachments_dir: str = "attachments", init: bool = False):
+    def __init__(self, client_id: str, authority: str, scopes: list, client_secret: str = None, user_email: str = None, attachments_dir: str = "attachments", init: bool = False):
         self.client_id = client_id
         self.authority = authority
         self.scopes = scopes
+        self.client_secret = client_secret
+        self.user_email = user_email
+        print(f"[DEBUG] JobMailExporter initialized with user_email: {self.user_email}")
         base_dir = os.path.dirname(os.path.abspath(__file__)) 
         self.attachments_dir = os.path.join(base_dir, attachments_dir)
         os.makedirs(self.attachments_dir, exist_ok=True)
@@ -17,8 +20,14 @@ class JobMailExporter:
         self.init = init
 
     def authenticate(self):
-        app = PublicClientApplication(self.client_id, authority=self.authority)
-        result = app.acquire_token_interactive(scopes=self.scopes)
+        """Authenticate using client credentials flow (application permissions)"""
+        app = ConfidentialClientApplication(
+            self.client_id,
+            authority=self.authority,
+            client_credential=self.client_secret
+        )
+        
+        result = app.acquire_token_for_client(scopes=self.scopes)
 
         if "access_token" not in result:
             raise RuntimeError(f"Erreur d'authentification: {result.get('error_description')}")
@@ -28,10 +37,15 @@ class JobMailExporter:
         print("[OK] Authentification réussie.")
 
     def get_filtered_emails(self, subject_prefix="[JOB EXPORT]", max_emails=250):
+        user_path = f"users/{self.user_email}" if self.user_email else "me"
+        
         if not self.init:
-            url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments,receivedDateTime"
+            url = f"https://graph.microsoft.com/v1.0/{user_path}/messages?$top={max_emails}&$select=id,subject,hasAttachments,receivedDateTime"
         else:
-            url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_emails}&$select=id,subject,hasAttachments"
+            url = f"https://graph.microsoft.com/v1.0/{user_path}/messages?$top={max_emails}&$select=id,subject,hasAttachments"
+        
+        print(f"[DEBUG] Fetching emails from: {url}")
+        print(f"[DEBUG] User email: {self.user_email}")
         
         try:
             response = requests.get(url, headers=self.headers)
@@ -39,6 +53,8 @@ class JobMailExporter:
             emails = response.json().get("value", [])
         except Exception as e:
             print(f"[ERROR] Error fetching emails: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"[ERROR] Response content: {e.response.text}")
             return []
         
         today = datetime.now(timezone.utc).date()
@@ -61,8 +77,10 @@ class JobMailExporter:
             print(f"[SKIP] No attachments for this email")
             return
 
+        user_path = f"users/{self.user_email}" if self.user_email else "me"
+        
         try:
-            attachments_url = f"https://graph.microsoft.com/v1.0/me/messages/{mail_id}/attachments"
+            attachments_url = f"https://graph.microsoft.com/v1.0/{user_path}/messages/{mail_id}/attachments"
             response = requests.get(attachments_url, headers=self.headers)
             response.raise_for_status()
             attachments = response.json().get("value", [])
