@@ -25,6 +25,22 @@ def save_to_mongodb_api(rfp_document: dict, api_url: str = "http://localhost:800
     Falls back to UPDATE if document already exists (duplicate key error).
     """
     try:
+        # Apply budget rule: -15% with min 65€ and max 120€
+        if "conditions" in rfp_document and "dailyRate" in rfp_document["conditions"]:
+            daily_rate = rfp_document["conditions"]["dailyRate"]
+            
+            # Apply to min rate
+            if daily_rate.get("min") is not None:
+                original_min = daily_rate["min"]
+                calculated_min = original_min * 0.85  # -15%
+                rfp_document["conditions"]["dailyRate"]["min"] = max(65, min(120, calculated_min))
+            
+            # Apply to max rate
+            if daily_rate.get("max") is not None:
+                original_max = daily_rate["max"]
+                calculated_max = original_max * 0.85  # -15%
+                rfp_document["conditions"]["dailyRate"]["max"] = max(65, min(120, calculated_max))
+        
         # Try POST (create)
         response = requests.post(
             f"{api_url}/mongodb",
