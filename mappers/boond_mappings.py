@@ -73,6 +73,8 @@ BOOND_TO_MONGO_MAPPING = {
     
     # seniority - default to NS (Not Specified)
     "__constant__NS": "seniority",
+    
+    # remoteOption - will be set in apply_boond_defaults if not present
 }
 
 BOOND_LIST_MAPPINGS = {
@@ -257,6 +259,10 @@ def apply_boond_defaults(transformed: dict, original: dict = None) -> dict:
     # Ensure seniority field exists with default "NS" if not set
     if "seniority" not in transformed or not transformed.get("seniority"):
         transformed["seniority"] = "NS"
+    
+    # Ensure remoteOption field exists with default "NotSpecified" if not set
+    if "remoteOption" not in transformed or not transformed.get("remoteOption"):
+        transformed["remoteOption"] = "NotSpecified"
     
     # Remove any internal fields that shouldn't be in MongoDB
     transformed.pop("skills_from_criteria", None)

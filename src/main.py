@@ -264,6 +264,10 @@ def main():
                     with open(file_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                         mission = ftm.map_json(data, pum.MAPPING, pum.LIST_MAPPINGS)
+                        
+                        # Apply Pro Unity defaults
+                        mission = pum.apply_pro_unity_defaults(mission, data)
+                        
                         print(json.dumps(mission, default=to_serializable, indent=2, ensure_ascii=False))
                         
                         # Save to MongoDB via API instead of direct insertion

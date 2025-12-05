@@ -25,6 +25,7 @@ MAPPING = {
     "publicationInfo.publishDate": "publishedAt",
     "jobUrl": "job_url",
     "id": "job_id",
+    "locationInfo.remoteOption": "remoteOption",
     "description": "job_desc",
     "roleInfo.roles[0].name": "roleTitle",
     "contractingPartyName": "serviceProvider",
@@ -50,3 +51,24 @@ LIST_MAPPINGS = {
     "languageInfo.languageGroups": ("languages", {"language": "language", "level": "level"}, lambda src, dst: dst),
 
 }
+
+
+###############################################################################
+# Post-mapping transformations
+###############################################################################
+
+def apply_pro_unity_defaults(transformed: dict, original: dict = None) -> dict:
+    """
+    Apply defaults and post-processing transformations to Pro Unity mapped document.
+    
+    Ensures all required fields exist with appropriate defaults.
+    """
+    # Ensure seniority field exists with default "NS" if not set
+    if "seniority" not in transformed or not transformed.get("seniority"):
+        transformed["seniority"] = "NS"
+    
+    # Ensure remoteOption field exists with default "NotSpecified" if not set
+    if "remoteOption" not in transformed or not transformed.get("remoteOption"):
+        transformed["remoteOption"] = "NotSpecified"
+    
+    return transformed
