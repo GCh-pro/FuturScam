@@ -130,6 +130,50 @@ def extract_company_name_from_included(opportunity: dict) -> str:
         return None
 
 
+def extract_resource_info_from_included(opportunity: dict) -> dict:
+    """
+    Extract resource (mainManager) information from the 'included' section of Boond response.
+    
+    Returns a dict with name, mail (empty), and role (operator) for metadata.
+    """
+    try:
+        # Boond response can be single object or wrapped in data
+        if "data" in opportunity and isinstance(opportunity["data"], dict):
+            relationships = opportunity.get("data", {}).get("relationships", {})
+            included = opportunity.get("included", [])
+        else:
+            relationships = opportunity.get("relationships", {})
+            included = opportunity.get("included", [])
+        
+        # Get the mainManager relationship ID
+        manager_id = relationships.get("mainManager", {}).get("data", {}).get("id")
+        
+        if not manager_id:
+            return None
+        
+        # Find the resource in the included array
+        for item in included:
+            if item.get("type") == "resource" and item.get("id") == str(manager_id):
+                attributes = item.get("attributes", {})
+                first_name = attributes.get("firstName", "")
+                last_name = attributes.get("lastName", "")
+                
+                # Build full name
+                full_name = f"{first_name} {last_name}".strip()
+                
+                if full_name:
+                    return {
+                        "name": full_name,
+                        "mail": "",  # Not available in Boond response
+                        "role": "operator"
+                    }
+        
+        return None
+    except Exception as e:
+        print(f"[DEBUG] Error extracting resource info: {e}")
+        return None
+
+
 def apply_boond_defaults(transformed: dict, original: dict = None) -> dict:
     """
     Apply defaults and post-processing transformations to Boond mapped document.
@@ -149,6 +193,13 @@ def apply_boond_defaults(transformed: dict, original: dict = None) -> dict:
             transformed["company"] = {}
         if company_name:
             transformed["company"]["name"] = company_name
+        
+        # Extract resource info and create metadata
+        resource_info = extract_resource_info_from_included(original)
+        if resource_info:
+            if "metadata" not in transformed:
+                transformed["metadata"] = []
+            transformed["metadata"].append(resource_info)
     
     # Ensure nested objects exist
     if "company" not in transformed or not isinstance(transformed["company"], dict):
