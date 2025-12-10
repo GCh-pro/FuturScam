@@ -36,7 +36,15 @@ class JobMailExporter:
         self.headers = {"Authorization": f"Bearer {self.access_token}"}
         print("[OK] Authentification réussie.")
 
-    def get_filtered_emails(self, subject_prefix="[JOB EXPORT]", max_emails=250):
+    def get_filtered_emails(self, subject_prefix="[JOB EXPORT]", max_emails=250, cutoff_datetime=None):
+        """
+        Get filtered emails by subject prefix and optionally by received datetime.
+        
+        Args:
+            subject_prefix: Filter emails starting with this prefix
+            max_emails: Maximum number of emails to fetch
+            cutoff_datetime: Only return emails received after this datetime (timezone-aware)
+        """
         user_path = f"users/{self.user_email}" if self.user_email else "me"
         
         if not self.init:
@@ -57,13 +65,44 @@ class JobMailExporter:
                 print(f"[ERROR] Response content: {e.response.text}")
             return []
         
-        today = datetime.now(timezone.utc).date()
-        filtered = [
-            mail for mail in emails
-            if mail.get("subject", "").startswith(subject_prefix)
-            and (self.init or datetime.fromisoformat(mail.get("receivedDateTime")).date() == today)
-        ]
-        print(f"[MAIL] Total emails found: {len(emails)}, Filtered by '{subject_prefix}': {len(filtered)}")
+        # Filter by subject prefix and datetime
+        filtered = []
+        for mail in emails:
+            # Check subject prefix
+            if not mail.get("subject", "").startswith(subject_prefix):
+                continue
+            
+            # If cutoff_datetime is provided, filter by received datetime
+            if cutoff_datetime and not self.init:
+                try:
+                    received_dt = datetime.fromisoformat(mail.get("receivedDateTime"))
+                    # Ensure received_dt is timezone-aware
+                    if received_dt.tzinfo is None:
+                        received_dt = received_dt.replace(tzinfo=timezone.utc)
+                    
+                    # Only include emails received after cutoff
+                    if received_dt <= cutoff_datetime:
+                        continue
+                except (ValueError, TypeError) as e:
+                    print(f"[WARN] Error parsing receivedDateTime for email: {e}")
+                    continue
+            elif not self.init and not cutoff_datetime:
+                # Fallback: filter by today if no cutoff provided
+                try:
+                    today = datetime.now(timezone.utc).date()
+                    received_date = datetime.fromisoformat(mail.get("receivedDateTime")).date()
+                    if received_date != today:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+            
+            filtered.append(mail)
+        
+        if cutoff_datetime:
+            print(f"[MAIL] Total emails found: {len(emails)}, Filtered by '{subject_prefix}' after {cutoff_datetime.isoformat()}: {len(filtered)}")
+        else:
+            print(f"[MAIL] Total emails found: {len(emails)}, Filtered by '{subject_prefix}': {len(filtered)}")
+        
         return filtered
 
     def save_attachments(self, mail):
@@ -115,8 +154,14 @@ class JobMailExporter:
             except Exception as e:
                 print(f"[ERROR] Error saving file {att_name}: {e}")
 
-    def process_emails(self):
-        filtered_emails = self.get_filtered_emails()
+    def process_emails(self, cutoff_datetime=None):
+        """
+        Process emails and save attachments.
+        
+        Args:
+            cutoff_datetime: Only process emails received after this datetime (timezone-aware)
+        """
+        filtered_emails = self.get_filtered_emails(cutoff_datetime=cutoff_datetime)
         print(f"[EMAIL] Processing {len(filtered_emails)} emails...")
         for mail in filtered_emails:
             self.save_attachments(mail)

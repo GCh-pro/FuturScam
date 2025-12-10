@@ -16,8 +16,54 @@ from helpers import to_serializable
 import os
 import json
 import requests
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 import params
+
+
+# Path to last execution timestamp file
+LAST_EXECUTION_FILE = Path(__file__).parent.parent / ".last_execution"
+
+
+def get_last_execution_time() -> datetime:
+    """
+    Read the last execution timestamp from file.
+    Returns the timestamp or current time - 1 hour if file doesn't exist.
+    All timestamps are timezone-aware (UTC).
+    """
+    try:
+        if LAST_EXECUTION_FILE.exists():
+            with open(LAST_EXECUTION_FILE, "r") as f:
+                timestamp_str = f.read().strip()
+                dt = datetime.fromisoformat(timestamp_str)
+                
+                # Ensure the datetime is timezone-aware (UTC)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                
+                return dt
+        else:
+            # First run - default to 1 hour ago
+            return datetime.now(timezone.utc) - timedelta(hours=1)
+    except Exception as e:
+        print(f"[WARN] Error reading last execution time: {e}")
+        return datetime.now(timezone.utc) - timedelta(hours=1)
+
+
+def save_last_execution_time(timestamp: datetime):
+    """
+    Save the execution timestamp to file.
+    Adds 1 millisecond to avoid processing the same data twice.
+    """
+    try:
+        # Add 1 millisecond to the timestamp
+        next_timestamp = timestamp + timedelta(milliseconds=1)
+        
+        with open(LAST_EXECUTION_FILE, "w") as f:
+            f.write(next_timestamp.isoformat())
+        
+        print(f"[OK] Last execution time saved: {next_timestamp.isoformat()}")
+    except Exception as e:
+        print(f"[ERROR] Error saving last execution time: {e}")
 
 
 def save_to_mongodb_api(rfp_document: dict, api_url: str = "http://localhost:8000") -> bool:
@@ -232,72 +278,108 @@ def process_boond_opportunities(cutoff_date: datetime = None, api_url: str = "ht
 
 
 def main():
-    exporter = JobMailExporter(
-        client_id=params.AZURE_CLIENT,
-        authority=params.AZURE_URI,
-        scopes=["https://graph.microsoft.com/.default"],
-        client_secret=params.AZURE_SECRET,
-        user_email=params.AZURE_USER_EMAIL,
-        attachments_dir="attachments",
-        init=False
-    )
+    """
+    Main ETL execution with last execution tracking.
     
-    print("[AUTH] Authenticating with Azure...")
-    exporter.authenticate()
+    This function:
+    1. Reads the last execution timestamp
+    2. Processes emails and Boond opportunities since that timestamp
+    3. Saves the current execution time for next run
+    """
+    print("=" * 80)
+    print("[ETL] Starting FuturScam ETL Process")
+    print("=" * 80)
+    
+    # Get the last execution timestamp
+    last_execution = get_last_execution_time()
+    current_execution = datetime.now(timezone.utc)
+    
+    print(f"\n[ETL] Last execution: {last_execution.isoformat()}")
+    print(f"[ETL] Current execution: {current_execution.isoformat()}")
+    print(f"[ETL] Processing data from: {last_execution.isoformat()}\n")
+    
+    try:
+        # Process emails
+        exporter = JobMailExporter(
+            client_id=params.AZURE_CLIENT,
+            authority=params.AZURE_URI,
+            scopes=["https://graph.microsoft.com/.default"],
+            client_secret=params.AZURE_SECRET,
+            user_email=params.AZURE_USER_EMAIL,
+            attachments_dir="attachments",
+            init=False
+        )
+        
+        print("[AUTH] Authenticating with Azure...")
+        exporter.authenticate()
 
-    print("[EMAIL] Processing emails...")
-    exporter.process_emails()
+        print(f"[EMAIL] Processing emails received after {last_execution.isoformat()}...")
+        exporter.process_emails(cutoff_datetime=last_execution)
 
-    current_dir = os.path.dirname(__file__)
-    parent_dir = os.path.dirname(current_dir)  
-    json_folder = os.path.join(parent_dir, "app", "attachments")
+        current_dir = os.path.dirname(__file__)
+        parent_dir = os.path.dirname(current_dir)  
+        json_folder = os.path.join(parent_dir, "app", "attachments")
 
-    if not os.path.exists(json_folder):
-        print(f"[WARN] Folder {json_folder} does not exist.")
-        email_saved_count = 0
-    else:
-        email_saved_count = 0
-        for filename in os.listdir(json_folder):
-            if filename.endswith(".json"):
-                file_path = os.path.join(json_folder, filename)
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        mission = ftm.map_json(data, pum.MAPPING, pum.LIST_MAPPINGS)
+        if not os.path.exists(json_folder):
+            print(f"[WARN] Folder {json_folder} does not exist.")
+            email_saved_count = 0
+        else:
+            email_saved_count = 0
+            for filename in os.listdir(json_folder):
+                if filename.endswith(".json"):
+                    file_path = os.path.join(json_folder, filename)
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            mission = ftm.map_json(data, pum.MAPPING, pum.LIST_MAPPINGS)
+                            
+                            # Apply Pro Unity defaults
+                            mission = pum.apply_pro_unity_defaults(mission, data)
+                            
+                            print(json.dumps(mission, default=to_serializable, indent=2, ensure_ascii=False))
+                            
+                            # Save to MongoDB via API instead of direct insertion
+                            if save_to_mongodb_api(mission):
+                                email_saved_count += 1
                         
-                        # Apply Pro Unity defaults
-                        mission = pum.apply_pro_unity_defaults(mission, data)
-                        
-                        print(json.dumps(mission, default=to_serializable, indent=2, ensure_ascii=False))
-                        
-                        # Save to MongoDB via API instead of direct insertion
-                        if save_to_mongodb_api(mission):
-                            email_saved_count += 1
-                    
-                except Exception as e:
-                    print(f"[WARN] Error reading {filename}: {e}")
-                finally:
-                    # Delete only the processed JSON file
-                    if os.path.exists(file_path):
-                        try:
-                            os.remove(file_path)
-                            print(f"[DELETE] File '{filename}' deleted")
-                        except Exception as e:
-                            print(f"[WARN] Error deleting '{filename}': {e}")
-    
-    print(f"\n[OK] Successfully saved {email_saved_count} email RFPs to MongoDB")
-    
-    # Process Boond opportunities
-    boond_saved_count = process_boond_opportunities()
-    
-    # Clean up expired RFPs (deadlineAt < today)
-    expired_count = cleanup_expired_rfps()
-    
-    print(f"\n[SUMMARY]")
-    print(f"  - Email RFPs saved: {email_saved_count}")
-    print(f"  - Boond RFPs saved: {boond_saved_count}")
-    print(f"  - Expired RFPs deleted: {expired_count}")
-    print(f"  - Total RFPs saved: {email_saved_count + boond_saved_count}")
+                    except Exception as e:
+                        print(f"[WARN] Error reading {filename}: {e}")
+                    finally:
+                        # Delete only the processed JSON file
+                        if os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                                print(f"[DELETE] File '{filename}' deleted")
+                            except Exception as e:
+                                print(f"[WARN] Error deleting '{filename}': {e}")
+        
+        print(f"\n[OK] Successfully saved {email_saved_count} email RFPs to MongoDB")
+        
+        # Process Boond opportunities with last execution timestamp
+        boond_saved_count = process_boond_opportunities(cutoff_date=last_execution)
+        
+        # Clean up expired RFPs (deadlineAt < today)
+        expired_count = cleanup_expired_rfps()
+        
+        print(f"\n[SUMMARY]")
+        print(f"  - Email RFPs saved: {email_saved_count}")
+        print(f"  - Boond RFPs saved: {boond_saved_count}")
+        print(f"  - Expired RFPs deleted: {expired_count}")
+        print(f"  - Total RFPs saved: {email_saved_count + boond_saved_count}")
+        
+        # Save the current execution timestamp for next run
+        save_last_execution_time(current_execution)
+        
+        print("\n" + "=" * 80)
+        print("[ETL] FuturScam ETL Process completed successfully")
+        print("=" * 80)
+        
+    except Exception as e:
+        print(f"\n[ERROR] ETL Process failed: {e}")
+        import traceback
+        traceback.print_exc()
+        print("\n[WARN] Last execution timestamp NOT updated due to error")
+        raise
 
 
 if __name__ == "__main__":

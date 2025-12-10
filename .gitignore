@@ -3,9 +3,16 @@ __pycache__/
 **/__pycache__/
 *.py[cod]
 
-# Dossiers d'attachments (où qu’ils soient)
+# Dossiers d'attachments (où qu'ils soient)
 attachments/
 **/attachments/
+
+# ETL timestamp tracking
+.last_execution
+
+# Logs
+logs/
+*.log
 
 # Environnements virtuels
 env/

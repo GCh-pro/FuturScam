@@ -134,7 +134,7 @@ def extract_resource_info_from_included(opportunity: dict) -> dict:
     """
     Extract resource (mainManager) information from the 'included' section of Boond response.
     
-    Returns a dict with name, mail (empty), and role (operator) for metadata.
+    Returns a dict with name, mail (generated from name), and role (operator) for metadata.
     """
     try:
         # Boond response can be single object or wrapped in data
@@ -162,9 +162,23 @@ def extract_resource_info_from_included(opportunity: dict) -> dict:
                 full_name = f"{first_name} {last_name}".strip()
                 
                 if full_name:
+                    # Generate email from name: firstname.lastname@futurwork.be (all lowercase)
+                    # Remove accents and special characters for email
+                    import unicodedata
+                    
+                    # Normalize and remove accents
+                    first_clean = unicodedata.normalize('NFD', first_name)
+                    first_clean = ''.join(c for c in first_clean if unicodedata.category(c) != 'Mn')
+                    
+                    last_clean = unicodedata.normalize('NFD', last_name)
+                    last_clean = ''.join(c for c in last_clean if unicodedata.category(c) != 'Mn')
+                    
+                    # Build email: firstname.lastname@futurwork.be (lowercase)
+                    email = f"{first_clean}.{last_clean}@futurwork.be".lower()
+                    
                     return {
                         "name": full_name,
-                        "mail": "",  # Not available in Boond response
+                        "mail": email,
                         "role": "operator"
                     }
         
