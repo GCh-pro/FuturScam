@@ -10,6 +10,7 @@ from app.boond_manager_extractor import (
     filter_recent_opportunities,
     transform_boond_to_mongo_format
 )
+from app.job_completer import JobDescriptionEnhancer
 import mappers.pro_unity_mappings as pum
 import mappers.mapper_to_mongo as ftm
 from helpers import to_serializable
@@ -22,6 +23,53 @@ import params
 
 # Path to last execution timestamp file
 LAST_EXECUTION_FILE = Path(__file__).parent.parent / ".last_execution"
+
+# Initialize Job Description Enhancer (only if API key is provided)
+job_enhancer = None
+if params.OPENAI_API_KEY and params.OPENAI_API_KEY.strip():
+    try:
+        job_enhancer = JobDescriptionEnhancer(api_key=params.OPENAI_API_KEY)
+        print("[INIT] ChatGPT Job Enhancer initialized")
+    except Exception as e:
+        print(f"[WARN] Could not initialize Job Enhancer: {e}")
+
+
+def enhance_rfp_with_chatgpt(rfp_document: dict) -> dict:
+    """
+    Enhance RFP document with ChatGPT to add RFP_type and replace job_desc with enriched HTML.
+    
+    Args:
+        rfp_document: The RFP document to enhance
+        
+    Returns:
+        Enhanced RFP document with RFP_type added and job_desc replaced by enriched HTML
+    """
+    if not job_enhancer:
+        print("[SKIP] Job enhancement skipped (no OpenAI API key)")
+        return rfp_document
+    
+    try:
+        job_desc = rfp_document.get("job_desc", "")
+        if not job_desc:
+            print("[SKIP] No job_desc to enhance")
+            return rfp_document
+        
+        print(f"[CHATGPT] Enhancing job description for job_id: {rfp_document.get('job_id', 'unknown')}...")
+        
+        # Call ChatGPT to enhance the job description
+        enhanced_data = job_enhancer.enhance_job_description_html(job_desc)
+        
+        # Replace job_desc with enhanced version and add RFP_type
+        rfp_document["RFP_type"] = enhanced_data.get("RFP_type", "Autre")
+        rfp_document["job_desc"] = enhanced_data.get("job_description", job_desc)
+        
+        print(f"[OK] Job enhanced - RFP_type: {rfp_document['RFP_type']}")
+        
+        return rfp_document
+        
+    except Exception as e:
+        print(f"[ERROR] Error enhancing job description: {e}")
+        return rfp_document
 
 
 def get_last_execution_time() -> datetime:
@@ -262,6 +310,9 @@ def process_boond_opportunities(cutoff_date: datetime = None, api_url: str = "ht
             # Opportunity is open, process normally
             rfp_doc = transform_boond_to_mongo_format(opportunity)
             
+            # Enhance job description with ChatGPT
+            rfp_doc = enhance_rfp_with_chatgpt(rfp_doc)
+            
             # DEBUG: Print skills before API call
             print(f"\n[DEBUG] Document skills: {rfp_doc.get('skills')}")
             print(f"[DEBUG] Full RFP doc: {json.dumps(rfp_doc, indent=2, default=str)}")
@@ -335,6 +386,9 @@ def main():
                             
                             # Apply Pro Unity defaults
                             mission = pum.apply_pro_unity_defaults(mission, data)
+                            
+                            # Enhance job description with ChatGPT
+                            mission = enhance_rfp_with_chatgpt(mission)
                             
                             print(json.dumps(mission, default=to_serializable, indent=2, ensure_ascii=False))
                             
