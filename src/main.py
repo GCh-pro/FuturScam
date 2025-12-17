@@ -238,26 +238,31 @@ def cleanup_closed_boond_rfps(boond_data: dict, api_url: str = "http://localhost
         deleted_count = 0
         
         for item in boond_data.get("data", []):
-            item_id = item.get("id")
+            # Get reference (maps to job_id in MongoDB)
+            reference = item.get("attributes", {}).get("reference")
             state = item.get("attributes", {}).get("state")
             
             # If state exists and is not 0 (open), mark for deletion from MongoDB
             if state is not None and state != 0 and state != "0":
+                if not reference:
+                    print(f"[WARN] Skipping item without reference (state: {state})")
+                    continue
+                    
                 try:
-                    # Try to delete by job_id
+                    # Delete by job_id (which is the Boond reference)
                     delete_response = requests.delete(
-                        f"{api_url}/mongodb/{item_id}",
+                        f"{api_url}/mongodb/{reference}",
                         timeout=30
                     )
                     if delete_response.status_code in [200, 204]:
                         deleted_count += 1
-                        print(f"[OK] Deleted closed Boond RFP: {item_id} (state: {state})")
+                        print(f"[OK] Deleted closed Boond RFP: {reference} (state: {state})")
                     else:
                         # State might be closed, skip if not found
                         if delete_response.status_code != 404:
-                            print(f"[WARN] Failed to delete Boond RFP {item_id}: status {delete_response.status_code}")
+                            print(f"[WARN] Failed to delete Boond RFP {reference}: status {delete_response.status_code}")
                 except requests.RequestException as e:
-                    print(f"[WARN] Error deleting Boond RFP {item_id}: {e}")
+                    print(f"[WARN] Error deleting Boond RFP {reference}: {e}")
         
         if deleted_count > 0:
             print(f"[CLEANUP] Deleted {deleted_count} closed Boond RFPs from MongoDB")
@@ -280,34 +285,29 @@ def process_boond_opportunities(cutoff_date: datetime = None, api_url: str = "ht
         print("[ERROR] No data from Boond Manager API")
         return 0
     
+    # First, cleanup all closed opportunities (state != 0) from MongoDB
+    print("[CLEANUP] Checking for closed opportunities (state != 0)...")
+    deleted_count = cleanup_closed_boond_rfps(data, api_url)
+    
     print(f"[FILTER] Filtering opportunities updated after {cutoff_date.date()}...")
-    recent_opportunities = filter_recent_opportunities(data, cutoff_date)
+    # Pass job_enhancer to filter_recent_opportunities for ChatGPT skills/languages extraction
+    recent_opportunities = filter_recent_opportunities(data, cutoff_date, job_enhancer=job_enhancer)
     print(f"[OK] Found {len(recent_opportunities)} recent opportunities")
     
     saved_count = 0
-    deleted_count = 0
     
     for opportunity in recent_opportunities:
         try:
-            # Check if opportunity is closed (state != 0)
-            state = opportunity.get("data", {}).get("state")
+            # Only process opportunities with state == 0 (open)
+            state = opportunity.get("data", {}).get("attributes", {}).get("state")
             job_id = opportunity.get("data", {}).get("id")
             
+            # Skip if state is not 0 (already deleted by cleanup_closed_boond_rfps)
             if state is not None and state != 0 and state != "0":
-                # Opportunity is closed, delete from MongoDB and skip processing
-                print(f"[SKIP] Opportunity {job_id} is closed (state: {state}), deleting from MongoDB...")
-                try:
-                    delete_response = requests.delete(f"{api_url}/mongodb/{job_id}", timeout=30)
-                    if delete_response.status_code in [200, 204]:
-                        deleted_count += 1
-                        print(f"[OK] Deleted closed opportunity: {job_id}")
-                    elif delete_response.status_code != 404:
-                        print(f"[WARN] Failed to delete {job_id}: status {delete_response.status_code}")
-                except requests.RequestException as e:
-                    print(f"[WARN] Error deleting {job_id}: {e}")
-                continue  # Skip processing this opportunity
+                print(f"[SKIP] Opportunity {job_id} is closed (state: {state}), already cleaned up")
+                continue
             
-            # Opportunity is open, process normally
+            # Opportunity is open (state == 0), process and add to DB
             rfp_doc = transform_boond_to_mongo_format(opportunity)
             
             # Enhance job description with ChatGPT
@@ -323,8 +323,6 @@ def process_boond_opportunities(cutoff_date: datetime = None, api_url: str = "ht
             print(f"[WARN] Error processing Boond opportunity: {e}")
     
     print(f"[OK] Successfully saved {saved_count}/{len(recent_opportunities)} Boond RFPs to MongoDB")
-    if deleted_count > 0:
-        print(f"[CLEANUP] Deleted {deleted_count} closed Boond RFPs from MongoDB")
     return saved_count
 
 

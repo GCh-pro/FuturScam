@@ -55,8 +55,7 @@ BOOND_TO_MONGO_MAPPING = {
     "data.attributes.occupationType": "conditions.occupation",
 
     # top-level fields
-    "data.id": "job_id",
-    "data.attributes.reference": "job_reference",
+    "data.attributes.reference": "job_id",
     "data.attributes.title": "roleTitle",
     "data.attributes.description": "job_desc",
     "data.attributes.url": "job_url",
@@ -81,11 +80,14 @@ BOOND_LIST_MAPPINGS = {
     # skills: try from data.attributes.skills first
     "data.attributes.skills": ("skills", {"name": "name", "level": "seniority"}, lambda src, dst: dst),
 
-    # skills from criteria (parsed by SkillBoy) - fallback if skills array is empty
-    "data.attributes.criteria": ("skills_from_criteria", {}, lambda src, dst: {"name": src} if isinstance(src, str) else src),
+    # skills from extracted_skills (parsed by ChatGPT) - will be merged in apply_boond_defaults
+    "data.attributes.extracted_skills": ("skills_from_chatgpt", {}, lambda src, dst: {"name": src, "seniority": "Required"} if isinstance(src, str) else src),
 
-    # languages: transform to expected format
+    # languages: try from data.attributes.languages first
     "data.attributes.languages": ("languages", {"language": "language", "level": "level"}, lambda src, dst: dst),
+    
+    # languages from extracted_languages (parsed by ChatGPT) - will be merged in apply_boond_defaults  
+    "data.attributes.extracted_languages": ("languages_from_chatgpt", {}, lambda src, dst: {"language": src, "level": "Required"} if isinstance(src, str) else src),
 }
 
 
@@ -306,14 +308,23 @@ def apply_boond_defaults(transformed: dict, original: dict = None) -> dict:
     if not transformed.get("job_url"):
         transformed["job_url"] = f"https://boond.com/opportunities/{transformed.get('job_id')}"
     
-    # Handle skills merging - if skills empty but skills_from_criteria exists, use that
-    skills_from_criteria = transformed.pop("skills_from_criteria", [])
-    if not transformed["skills"] and skills_from_criteria:
-        # Convert criteria skills to proper format if needed
-        if skills_from_criteria and isinstance(skills_from_criteria[0], str):
-            transformed["skills"] = [{"name": skill, "seniority": "Required"} for skill in skills_from_criteria]
-        else:
-            transformed["skills"] = skills_from_criteria
+    # Handle skills merging - if skills empty but skills_from_chatgpt exists, use that
+    skills_from_chatgpt = transformed.pop("skills_from_chatgpt", [])
+    print(f"[DEBUG MAPPING] skills_from_chatgpt: {skills_from_chatgpt}")
+    print(f"[DEBUG MAPPING] Current skills: {transformed.get('skills', [])}")
+    if not transformed["skills"] and skills_from_chatgpt:
+        # ChatGPT skills already in proper format with name and seniority
+        transformed["skills"] = skills_from_chatgpt
+        print(f"[DEBUG MAPPING] After merge, skills: {transformed['skills']}")
+    
+    # Handle languages merging - if languages empty but languages_from_chatgpt exists, use that
+    languages_from_chatgpt = transformed.pop("languages_from_chatgpt", [])
+    print(f"[DEBUG MAPPING] languages_from_chatgpt: {languages_from_chatgpt}")
+    print(f"[DEBUG MAPPING] Current languages: {transformed.get('languages', [])}")
+    if not transformed["languages"] and languages_from_chatgpt:
+        # ChatGPT languages already in proper format with language and level
+        transformed["languages"] = languages_from_chatgpt
+        print(f"[DEBUG MAPPING] After merge, languages: {transformed['languages']}")
     
     # Transform serviceProvider from integer ID to text value
     if "serviceProvider" in transformed:
@@ -330,7 +341,8 @@ def apply_boond_defaults(transformed: dict, original: dict = None) -> dict:
         transformed["remoteOption"] = "NotSpecified"
     
     # Remove any internal fields that shouldn't be in MongoDB
-    transformed.pop("skills_from_criteria", None)
+    transformed.pop("skills_from_chatgpt", None)
+    transformed.pop("languages_from_chatgpt", None)
     
     return transformed
 

@@ -11,6 +11,67 @@ class JobDescriptionEnhancer:
         self.client = OpenAI(api_key=api_key)
         self.model = model
 
+    def extract_skills_and_languages(self, criteria: str, description: str = "") -> dict:
+        """
+        Extrait les compétences techniques et les langues d'un texte de mission.
+        
+        Args:
+            criteria: Le texte des critères de la mission
+            description: La description complète de la mission (optionnel)
+            
+        Returns:
+            dict avec:
+                - skills: Liste des compétences techniques extraites
+                - languages: Liste des langues extraites
+        """
+        combined_text = f"{criteria}\n{description}".strip()
+        
+        prompt = f"""Tu es un expert en extraction d'informations pour des missions IT.
+
+À partir du texte ci-dessous, tu dois extraire :
+
+1. **skills** : Liste des compétences techniques, technologies, frameworks, outils mentionnés
+   - Sois précis (ex: "Python", "React", "AWS", "Docker", "Kubernetes")
+   - Ne mets que les compétences techniques, pas les soft skills
+   - Maximum 20 compétences les plus pertinentes
+   - Format: liste de mots-clés courts
+
+2. **languages** : Liste des langues requises
+   - Format: ["Français", "Anglais", "Néerlandais", etc.]
+   - Uniquement les langues explicitement mentionnées
+
+Réponds **uniquement** sous ce format JSON :
+
+{{
+  "skills": ["skill1", "skill2", ...],
+  "languages": ["Français", "Anglais", ...]
+}}
+
+---
+
+TEXTE À ANALYSER :
+
+{combined_text}
+"""
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
+            result = json.loads(response.choices[0].message.content)
+            return {
+                "skills": result.get("skills", []),
+                "languages": result.get("languages", [])
+            }
+        except Exception as e:
+            print(f"[ERROR] Error extracting skills and languages: {e}")
+            return {
+                "skills": [],
+                "languages": []
+            }
+
     def enhance_job_description_html(self, job_description: str) -> dict:
         """
         Enrichit une job description brute et retourne un HTML structuré + RFP_type.

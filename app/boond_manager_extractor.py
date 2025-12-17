@@ -43,43 +43,10 @@ def fetch_boond_opportunities():
     return response.json()
 
 
-def check_skillboy_health(skillboy_url: str = "http://localhost:8000") -> bool:
-    """Check if SkillBoy API is healthy."""
-    try:
-        response = requests.get(
-            f"{skillboy_url}/skillboy/health",
-            timeout=10
-        )
-        return response.status_code == 200
-    except requests.RequestException:
-        return False
-
-
-def parse_criteria_with_skillboy(criteria_text: str, skillboy_url: str = "http://localhost:8000") -> list:
-    """Parse criteria text using SkillBoy API to extract skills.
-    Returns empty list if SkillBoy is unavailable."""
-    
-    try:
-        response = requests.post(
-            f"{skillboy_url}/skillboy",
-            json={"text": criteria_text},
-            timeout=120
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            skills = result.get("skills", [])
-            return skills
-        else:
-            print(f"[WARN] SkillBoy API error: status {response.status_code}")
-            return []
-    except requests.RequestException as e:
-        print(f"[WARN] SkillBoy unavailable: {e}")
-        return []
-
-
-def filter_recent_opportunities(data: dict, cutoff_date: datetime) -> list:
-    """Filter opportunities updated after cutoff_date and fetch their details."""
+def filter_recent_opportunities(data: dict, cutoff_date: datetime, job_enhancer=None) -> list:
+    """Filter opportunities updated after cutoff_date and fetch their details.
+    Uses ChatGPT to extract skills and languages if job_enhancer is provided.
+    """
     filtered_ids = []
     for item in data.get("data", []):
         update_date_str = item.get("attributes", {}).get("updateDate")
@@ -90,10 +57,8 @@ def filter_recent_opportunities(data: dict, cutoff_date: datetime) -> list:
         if update_dt > cutoff_date:
             filtered_ids.append(item["id"])
     
-    # Check SkillBoy health once before processing
-    skillboy_available = check_skillboy_health()
-    if not skillboy_available:
-        print("[WARN] SkillBoy API unavailable, will skip skills parsing")
+    if not job_enhancer:
+        print("[WARN] No job enhancer provided, skills and languages extraction will be skipped")
     
     # Fetch details for each filtered opportunity
     details = []
@@ -119,16 +84,23 @@ def filter_recent_opportunities(data: dict, cutoff_date: datetime) -> list:
             try:
                 opportunity = response.json()
                 print(opportunity)
-                # Parse criteria using SkillBoy API only if available
-                if skillboy_available:
-                    # Concatenate criteria and description for better skill extraction
+                
+                # Extract skills and languages using ChatGPT
+                if job_enhancer:
                     criteria_text = opportunity.get("data", {}).get("attributes", {}).get("criteria", "")
                     description_text = opportunity.get("data", {}).get("attributes", {}).get("description", "")
-                    combined_text = f"{criteria_text}\n{description_text}".strip()
                     
-                    if combined_text:
-                        skills = parse_criteria_with_skillboy(combined_text)
-                        opportunity["data"]["attributes"]["criteria"] = skills
+                    if criteria_text or description_text:
+                        print(f"[CHATGPT] Extracting skills and languages for opportunity {item_id}...")
+                        extracted = job_enhancer.extract_skills_and_languages(criteria_text, description_text)
+                        
+                        # Store extracted skills and languages in attributes
+                        opportunity["data"]["attributes"]["extracted_skills"] = extracted.get("skills", [])
+                        opportunity["data"]["attributes"]["extracted_languages"] = extracted.get("languages", [])
+                        
+                        print(f"[OK] Extracted {len(extracted.get('skills', []))} skills: {extracted.get('skills', [])}")
+                        print(f"[OK] Extracted {len(extracted.get('languages', []))} languages: {extracted.get('languages', [])}")
+                
                 details.append(opportunity)
             except json.JSONDecodeError as e:
                 print(f"Error decoding JSON for opportunity {item_id}: {e}")
@@ -162,7 +134,9 @@ if __name__ == "__main__":
     data = fetch_boond_opportunities()
     if data:
         cutoff = datetime(2025, 11, 21, tzinfo=timezone.utc)
-        recent_opportunities = filter_recent_opportunities(data, cutoff)
+        # Note: filter_recent_opportunities now requires job_enhancer parameter
+        # For standalone testing, pass None to skip skills/languages extraction
+        recent_opportunities = filter_recent_opportunities(data, cutoff, job_enhancer=None)
         
         print(f"Found {len(recent_opportunities)} recent opportunities")
         
