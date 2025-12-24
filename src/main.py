@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.job_mail_exporter import JobMailExporter  
+from app.subscription_notifier import SubscriptionNotifier
 from app.boond_manager_extractor import (
     fetch_boond_opportunities,
     filter_recent_opportunities,
@@ -114,9 +115,10 @@ def save_last_execution_time(timestamp: datetime):
         print(f"[ERROR] Error saving last execution time: {e}")
 
 
-def save_to_mongodb_api(rfp_document: dict, api_url: str = "http://localhost:8000") -> bool:
+def save_to_mongodb_api(rfp_document: dict, api_url: str = "http://localhost:8000") -> tuple:
     """Save RFP document to MongoDB via API POST /mongodb endpoint. 
     Falls back to UPDATE if document already exists (duplicate key error).
+    Returns: (success: bool, rfp_document: dict or None)
     """
     try:
         # Apply budget rule: -15% with min 65€ and max 120€
@@ -145,7 +147,7 @@ def save_to_mongodb_api(rfp_document: dict, api_url: str = "http://localhost:800
         if response.status_code == 200:
             result = response.json()
             print(f"[OK] RFP created successfully: {result.get('id', 'Unknown ID')}")
-            return True
+            return (True, rfp_document)
         elif response.status_code == 400:
             # Check if it's a duplicate key error
             response_text = response.text.lower()
@@ -163,25 +165,25 @@ def save_to_mongodb_api(rfp_document: dict, api_url: str = "http://localhost:800
                     
                     if update_response.status_code in [200, 204]:
                         print(f"[OK] RFP updated successfully: {job_id}")
-                        return True
+                        return (True, rfp_document)
                     else:
                         print(f"[ERROR] Failed to update RFP: status {update_response.status_code}")
                         print(f"Response: {update_response.text}")
-                        return False
+                        return (False, None)
                 else:
                     print(f"[ERROR] No job_id found for update fallback")
-                    return False
+                    return (False, None)
             else:
                 print(f"[ERROR] MongoDB API error: status {response.status_code}")
                 print(f"Response: {response.text}")
-                return False
+                return (False, None)
         else:
             print(f"[ERROR] MongoDB API error: status {response.status_code}")
             print(f"Response: {response.text}")
-            return False
+            return (False, None)
     except requests.RequestException as e:
         print(f"[ERROR] Error connecting to MongoDB API: {e}")
-        return False
+        return (False, None)
 
 
 def cleanup_expired_rfps(api_url: str = "http://localhost:8000") -> int:
@@ -274,7 +276,9 @@ def cleanup_closed_boond_rfps(boond_data: dict, api_url: str = "http://localhost
 
 
 def process_boond_opportunities(cutoff_date: datetime = None, api_url: str = "http://localhost:8000"):
-    """Fetch and process Boond Manager opportunities."""
+    """Fetch and process Boond Manager opportunities.
+    Returns: (saved_count, list of saved RFP documents)
+    """
     if cutoff_date is None:
         cutoff_date = datetime(2025, 11, 20, tzinfo=timezone.utc)
     
@@ -283,7 +287,7 @@ def process_boond_opportunities(cutoff_date: datetime = None, api_url: str = "ht
     data = fetch_boond_opportunities()
     if not data:
         print("[ERROR] No data from Boond Manager API")
-        return 0
+        return 0, []
     
     # First, cleanup all closed opportunities (state != 0) from MongoDB
     print("[CLEANUP] Checking for closed opportunities (state != 0)...")
@@ -295,6 +299,7 @@ def process_boond_opportunities(cutoff_date: datetime = None, api_url: str = "ht
     print(f"[OK] Found {len(recent_opportunities)} recent opportunities")
     
     saved_count = 0
+    saved_rfps = []
     
     for opportunity in recent_opportunities:
         try:
@@ -317,13 +322,15 @@ def process_boond_opportunities(cutoff_date: datetime = None, api_url: str = "ht
             print(f"\n[DEBUG] Document skills: {rfp_doc.get('skills')}")
             print(f"[DEBUG] Full RFP doc: {json.dumps(rfp_doc, indent=2, default=str)}")
             
-            if save_to_mongodb_api(rfp_doc, api_url):
+            success, saved_doc = save_to_mongodb_api(rfp_doc, api_url)
+            if success and saved_doc:
                 saved_count += 1
+                saved_rfps.append(saved_doc)
         except Exception as e:
             print(f"[WARN] Error processing Boond opportunity: {e}")
     
     print(f"[OK] Successfully saved {saved_count}/{len(recent_opportunities)} Boond RFPs to MongoDB")
-    return saved_count
+    return saved_count, saved_rfps
 
 
 def main():
@@ -372,8 +379,10 @@ def main():
         if not os.path.exists(json_folder):
             print(f"[WARN] Folder {json_folder} does not exist.")
             email_saved_count = 0
+            email_saved_rfps = []
         else:
             email_saved_count = 0
+            email_saved_rfps = []
             for filename in os.listdir(json_folder):
                 if filename.endswith(".json"):
                     file_path = os.path.join(json_folder, filename)
@@ -391,8 +400,10 @@ def main():
                             print(json.dumps(mission, default=to_serializable, indent=2, ensure_ascii=False))
                             
                             # Save to MongoDB via API instead of direct insertion
-                            if save_to_mongodb_api(mission):
+                            success, saved_doc = save_to_mongodb_api(mission)
+                            if success and saved_doc:
                                 email_saved_count += 1
+                                email_saved_rfps.append(saved_doc)
                         
                     except Exception as e:
                         print(f"[WARN] Error reading {filename}: {e}")
@@ -408,10 +419,25 @@ def main():
         print(f"\n[OK] Successfully saved {email_saved_count} email RFPs to MongoDB")
         
         # Process Boond opportunities with last execution timestamp
-        boond_saved_count = process_boond_opportunities(cutoff_date=last_execution)
+        boond_saved_count, boond_saved_rfps = process_boond_opportunities(cutoff_date=last_execution)
+        
+        # Combine all saved RFPs from this run
+        all_saved_rfps = email_saved_rfps + boond_saved_rfps
+        print(f"\n[INFO] Total RFPs added/modified in this run: {len(all_saved_rfps)}")
         
         # Clean up expired RFPs (deadlineAt < today)
         expired_count = cleanup_expired_rfps()
+        
+        # Send subscription notifications to users (only for RFPs from this run)
+        print("\n[NOTIFICATIONS] Sending subscription notifications...")
+        try:
+            notifier = SubscriptionNotifier(api_url="http://localhost:8000")
+            notifier.notify_all_subscribers(new_rfps=all_saved_rfps)
+            print("[OK] Subscription notifications completed")
+        except Exception as e:
+            print(f"[ERROR] Error sending subscription notifications: {e}")
+            import traceback
+            traceback.print_exc()
         
         print(f"\n[SUMMARY]")
         print(f"  - Email RFPs saved: {email_saved_count}")
