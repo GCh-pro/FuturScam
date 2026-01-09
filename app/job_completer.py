@@ -91,6 +91,7 @@ TEXTE À ANALYSER :
 2. **En HTML propre**, compatible avec un front React  
 3. **Utilisant le canevas fourni ci-dessous**  
 4. **Catégorisée automatiquement via un champ "RFP_type"**
+5. le nom du client ne doit pas apparaitre d'aucune façon. 
 
 ---
 

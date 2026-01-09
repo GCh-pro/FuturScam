@@ -108,7 +108,7 @@ class SubscriptionNotifier:
             """
             
             for rfp in rfps:
-                title = rfp.get("title", "Sans titre")
+                title = rfp.get("roleTitle", "Sans titre")
                 job_id = rfp.get("job_id", "")
                 job_desc = rfp.get("job_desc", "Pas de description disponible")
                 deadline = rfp.get("deadlineAt", "Non spécifiée")
